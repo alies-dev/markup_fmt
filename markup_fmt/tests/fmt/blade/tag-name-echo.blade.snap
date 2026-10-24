@@ -1,0 +1,6 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<{{ $tag }} class="heading">Title</{{ $tag }}>
+<{{ $tag }} {{ $attributes }}>Dynamic</{{ $tag }}>
+<{{ $icon }} class="w-4" />

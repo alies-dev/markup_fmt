@@ -1,0 +1,5 @@
+<p><?= $x ?></p>
+<p><?=$y?></p>
+<p><?= json_encode(['a' => 1, 'b' => [1,2]]) ?></p>
+<a href="<?= $url ?>">link</a>
+<?PHP echo 1; ?>

@@ -1,0 +1,10 @@
+<script>
+    const data = @json($data);
+    let open = {{ $open ? 'true' : 'false' }};
+        window.config = {!! json_encode($config) !!};
+    @if ($debug)
+        console.log(data);
+    @endif
+</script>
+<script>const plain   =   1;</script>
+<script src="{{ asset('app.js') }}"></script>

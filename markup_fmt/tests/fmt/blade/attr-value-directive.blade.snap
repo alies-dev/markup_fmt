@@ -1,0 +1,14 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<div class="p-4 @if ($active) bg-blue @endif">
+  <input class="form-control @error('email') is-invalid @enderror" name="email">
+  <li class="@if($x == "a") on @else off @endif">item</li>
+  <div
+    x-data="{ open: @js($open), items: @json($items) }"
+    class="@class(['a', 'b' => $c])"
+  >
+    <a href="@route('home')" data-x="@unknown(1)">route</a>
+    <meta name="csrf" content="@csrf">
+  </div>
+</div>

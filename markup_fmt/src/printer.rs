@@ -12,6 +12,8 @@ use itertools::{EitherOrBoth, Itertools};
 use std::borrow::Cow;
 use tiny_pretty::Doc;
 
+mod blade;
+
 pub(super) trait DocGen<'s> {
     fn doc<F>(&self, ctx: &mut Ctx<'s, F>, state: &State<'s>) -> Doc<'s>
     where
@@ -373,6 +375,16 @@ impl<'s> DocGen<'s> for Attribute<'s> {
     {
         match self {
             Attribute::Native(native_attribute) => native_attribute.doc(ctx, state),
+            Attribute::BladeBlock(blade_block) => {
+                blade::format_block_attrs(blade_block, ctx, state)
+            }
+            Attribute::BladeComment(blade_comment) => {
+                blade::format_comment(blade_comment, ctx, state)
+            }
+            Attribute::BladeDirective(blade_directive) => {
+                blade::format_directive(blade_directive, ctx, state, true)
+            }
+            Attribute::BladeEcho(blade_echo) => blade::format_echo(blade_echo, ctx, state),
             Attribute::Svelte(svelte_attribute) => svelte_attribute.doc(ctx, state),
             Attribute::SvelteAttachment(svelte_attachment) => svelte_attachment.doc(ctx, state),
             Attribute::VueDirective(vue_directive) => vue_directive.doc(ctx, state),
@@ -452,7 +464,11 @@ impl<'s> DocGen<'s> for Element<'s> {
             .and_then(|(namespace, name)| namespace.eq_ignore_ascii_case("html").then_some(name))
             .unwrap_or(self.tag_name);
         let formatted_tag_name = match ctx.language {
-            Language::Html | Language::Jinja | Language::Vento | Language::Mustache
+            Language::Html
+            | Language::Jinja
+            | Language::Vento
+            | Language::Mustache
+            | Language::Blade
                 if css_dataset::tags::STANDARD_HTML_TAGS
                     .iter()
                     .any(|tag| tag.eq_ignore_ascii_case(self.tag_name)) =>
@@ -488,10 +504,11 @@ impl<'s> DocGen<'s> for Element<'s> {
             ctx.options
                 .html_normal_self_closing
                 .unwrap_or(self.self_closing)
-        } else if matches!(
+        } else if (matches!(
             ctx.language,
             Language::Vue | Language::Svelte | Language::Angular
-        ) && helpers::is_component(self.tag_name)
+        ) && helpers::is_component(self.tag_name))
+            || (ctx.language == Language::Blade && helpers::is_blade_component(self.tag_name))
         {
             ctx.options
                 .component_self_closing
@@ -515,6 +532,19 @@ impl<'s> DocGen<'s> for Element<'s> {
         docs.push(Doc::char('<'));
         docs.push(Doc::text(formatted_tag_name.clone()));
 
+        // A Blade echo/directive attribute is multi-line when its printed form is, whatever the
+        // source looked like; deciding on the source would flip the layout on the second pass.
+        let single_blade_attr = match &*self.attrs {
+            [attr]
+                if ctx.language == Language::Blade
+                    && ctx.options.single_attr_same_line
+                    && !is_whitespace_sensitive =>
+            {
+                blade::format_attr(attr, ctx, &state)
+            }
+            _ => None,
+        };
+
         match &*self.attrs {
             [] => {
                 if self_closing && (self.void_element || is_empty) {
@@ -534,10 +564,16 @@ impl<'s> DocGen<'s> for Element<'s> {
             [attr]
                 if ctx.options.single_attr_same_line
                     && !is_whitespace_sensitive
-                    && !is_multi_line_attr(attr) =>
+                    && !single_blade_attr.as_ref().map_or_else(
+                        || is_multi_line_attr(attr),
+                        |(_, multi_line)| *multi_line,
+                    ) =>
             {
                 docs.push(Doc::space());
-                docs.push(attr.doc(ctx, &state));
+                docs.push(match single_blade_attr {
+                    Some((doc, _)) => doc,
+                    None => attr.doc(ctx, &state),
+                });
                 if self_closing && is_empty {
                     docs.push(Doc::text(" />"));
                     return Doc::list(docs);
@@ -567,13 +603,20 @@ impl<'s> DocGen<'s> for Element<'s> {
                 } else {
                     Doc::line_or_space()
                 };
+                // A lone Blade attribute was already formatted above; formatting it again would
+                // call the external formatter a second time.
+                let attr_doc = |attr: &Attribute<'s>, ctx: &mut Ctx<'s, F>| match &single_blade_attr
+                {
+                    Some((doc, _)) => doc.clone(),
+                    None => attr.doc(ctx, &state),
+                };
                 let attrs = if let Some(max) = ctx.options.max_attrs_per_line {
                     Doc::line_or_space()
                         .concat(itertools::intersperse(
                             self.attrs.chunks(max.into()).map(|chunk| {
                                 Doc::list(
                                     itertools::intersperse(
-                                        chunk.iter().map(|attr| attr.doc(ctx, &state)),
+                                        chunk.iter().map(|attr| attr_doc(attr, ctx)),
                                         attrs_sep.clone(),
                                     )
                                     .collect(),
@@ -587,7 +630,7 @@ impl<'s> DocGen<'s> for Element<'s> {
                     Doc::list(
                         self.attrs
                             .iter()
-                            .flat_map(|attr| [attrs_sep.clone(), attr.doc(ctx, &state)].into_iter())
+                            .flat_map(|attr| [attrs_sep.clone(), attr_doc(attr, ctx)].into_iter())
                             .collect(),
                     )
                     .nest(ctx.indent_width)
@@ -671,6 +714,7 @@ impl<'s> DocGen<'s> for Element<'s> {
                 format_ws_insensitive_trailing_ws(&self.children),
             )
         };
+        let trailing_ws = blade::php_close_trailing_gap(&self.children).unwrap_or(trailing_ws);
 
         if tag_name.eq_ignore_ascii_case("script") && ctx.language != Language::Xml {
             if let [
@@ -682,6 +726,11 @@ impl<'s> DocGen<'s> for Element<'s> {
             {
                 if text_node.raw.chars().all(|c| c.is_ascii_whitespace()) {
                     docs.push(Doc::hard_line());
+                } else if ctx.language == Language::Blade
+                    && blade::has_blade_syntax(text_node.raw, ctx)
+                {
+                    // Blade syntax may sit anywhere in the body, so JS can't be reformatted safely.
+                    docs.extend(blade::reflow_exact(text_node.raw, ctx.line_break));
                 } else {
                     let type_attr = self.attrs.iter().find_map(|attr| match attr {
                         Attribute::Native(native) if native.name.eq_ignore_ascii_case("type") => {
@@ -742,7 +791,10 @@ impl<'s> DocGen<'s> for Element<'s> {
                             };
                             let formatted = if matches!(
                                 ctx.language,
-                                Language::Jinja | Language::Mustache | Language::Vento
+                                Language::Jinja
+                                    | Language::Mustache
+                                    | Language::Vento
+                                    | Language::Blade
                             ) {
                                 ctx.try_format_script(text_node.raw, lang, text_node.start, &state)
                                     .unwrap_or_else(|_| Cow::from(text_node.raw))
@@ -796,6 +848,10 @@ impl<'s> DocGen<'s> for Element<'s> {
             {
                 if text_node.raw.chars().all(|c| c.is_ascii_whitespace()) {
                     docs.push(Doc::hard_line());
+                } else if ctx.language == Language::Blade
+                    && blade::has_blade_syntax(text_node.raw, ctx)
+                {
+                    docs.extend(blade::reflow_exact(text_node.raw, ctx.line_break));
                 } else {
                     let lang = self
                         .attrs
@@ -887,6 +943,8 @@ impl<'s> DocGen<'s> for Element<'s> {
                             | NodeKind::AstroExpr(..)
                             | NodeKind::JinjaInterpolation(..)
                             | NodeKind::VentoInterpolation(..)
+                            | NodeKind::BladeEcho(..)
+                            | NodeKind::BladeComment(..)
                     )
                 });
             if !should_not_indent {
@@ -911,7 +969,10 @@ impl<'s> DocGen<'s> for Element<'s> {
             docs.push(trailing_ws);
         }
 
-        docs.push(Doc::text(format!("</{formatted_tag_name}>")));
+        docs.push(Doc::text(format!(
+            "</{}>",
+            self.close_tag_name.unwrap_or(&formatted_tag_name)
+        )));
 
         Doc::list(docs).group()
     }
@@ -1153,6 +1214,11 @@ impl<'s> DocGen<'s> for NativeAttribute<'s> {
     where
         F: for<'a> FnMut(&'a str, Hints) -> Result<Cow<'a, str>, Error>,
     {
+        if ctx.language == Language::Blade
+            && let Some(doc) = blade::format_native_attr(self, ctx, state)
+        {
+            return doc;
+        }
         let name = Doc::text(self.name);
         if let Some((value, value_start)) = self.value {
             let value = match ctx.language {
@@ -1335,6 +1401,18 @@ impl<'s> DocGen<'s> for NodeKind<'s> {
             NodeKind::AngularLet(angular_let) => angular_let.doc(ctx, state),
             NodeKind::AngularSwitch(angular_switch) => angular_switch.doc(ctx, state),
             NodeKind::AstroExpr(astro_expr) => astro_expr.doc(ctx, state),
+            NodeKind::BladeBlock(blade_block) => blade::format_block_nodes(blade_block, ctx, state),
+            NodeKind::BladeComment(blade_comment) => {
+                blade::format_comment(blade_comment, ctx, state)
+            }
+            NodeKind::BladeDirective(blade_directive) => {
+                blade::format_directive(blade_directive, ctx, state, false)
+            }
+            NodeKind::BladeEcho(blade_echo) => blade::format_echo(blade_echo, ctx, state),
+            NodeKind::BladePhp(blade_php) => blade::format_php(blade_php, ctx, state),
+            NodeKind::BladeVerbatim(blade_verbatim) => {
+                blade::format_verbatim(blade_verbatim, ctx, state)
+            }
             NodeKind::Cdata(cdata) => cdata.doc(ctx, state),
             NodeKind::Comment(comment) => comment.doc(ctx, state),
             NodeKind::Doctype(doctype) => doctype.doc(ctx, state),
@@ -1392,6 +1470,18 @@ impl<'s> DocGen<'s> for Root<'s> {
         let has_two_more_non_text_children =
             has_two_more_non_text_children(&self.children, ctx.language);
 
+        // An unclosed `<?php` already carries the file's final newline in its body.
+        let trailing_line = if matches!(
+            self.children.last(),
+            Some(Node {
+                kind: NodeKind::BladePhp(BladePhp { closed: false, .. }),
+                ..
+            })
+        ) {
+            Doc::nil()
+        } else {
+            Doc::hard_line()
+        };
         if is_whole_document_like
             && !matches!(
                 ctx.options.whitespace_sensitivity,
@@ -1401,10 +1491,10 @@ impl<'s> DocGen<'s> for Root<'s> {
             || ctx.language == Language::Xml
         {
             format_children_with_inserting_linebreak(&self.children, ctx, state)
-                .append(Doc::hard_line())
+                .append(trailing_line)
         } else {
             format_children_without_inserting_linebreak(&self.children, ctx, state)
-                .append(Doc::hard_line())
+                .append(trailing_line)
         }
     }
 }
@@ -2318,6 +2408,15 @@ fn is_all_ascii_whitespace(s: &str) -> bool {
 
 fn is_multi_line_attr(attr: &Attribute) -> bool {
     match attr {
+        Attribute::BladeComment(BladeComment { raw: value })
+        | Attribute::BladeEcho(BladeEcho { expr: value, .. })
+        | Attribute::BladeDirective(BladeDirective {
+            args: Some((value, _)),
+            ..
+        }) => value.contains('\n'),
+        Attribute::BladeDirective(BladeDirective { args: None, .. }) => false,
+        // Blade blocks span multiple lines just like Jinja blocks.
+        Attribute::BladeBlock(..) => true,
         Attribute::Native(attr) => attr
             .value
             .is_some_and(|(value, _)| value.trim().contains('\n')),
@@ -2343,25 +2442,20 @@ fn should_ignore_node<'s, F>(node: &Node, index: usize, nodes: &[Node], ctx: &Ct
 where
     F: for<'a> FnMut(&'a str, Hints) -> Result<Cow<'a, str>, Error>,
 {
+    let is_ignore_comment = |node: &Node| match &node.kind {
+        NodeKind::Comment(comment) => has_ignore_directive(comment.raw, ctx),
+        NodeKind::BladeComment(comment) => has_ignore_directive(comment.raw, ctx),
+        _ => false,
+    };
     (match index.checked_sub(1).and_then(|i| nodes.get(i)) {
-        Some(Node {
-            kind: NodeKind::Comment(comment),
-            ..
-        }) => has_ignore_directive(comment, ctx),
+        Some(prev) if is_ignore_comment(prev) => true,
         Some(Node {
             kind: NodeKind::Text(text_node),
             ..
-        }) if is_all_ascii_whitespace(text_node.raw) => {
-            if let Some(Node {
-                kind: NodeKind::Comment(comment),
-                ..
-            }) = index.checked_sub(2).and_then(|i| nodes.get(i))
-            {
-                has_ignore_directive(comment, ctx)
-            } else {
-                false
-            }
-        }
+        }) if is_all_ascii_whitespace(text_node.raw) => index
+            .checked_sub(2)
+            .and_then(|i| nodes.get(i))
+            .is_some_and(is_ignore_comment),
         _ => false,
     }) || if let NodeKind::JinjaBlock(block) = &node.kind
         && let Some(JinjaTagOrChildren::Tag(tag)) = block.body.first()
@@ -2371,13 +2465,11 @@ where
         false
     }
 }
-fn has_ignore_directive<'s, F>(comment: &Comment, ctx: &Ctx<'s, F>) -> bool
+fn has_ignore_directive<'s, F>(raw: &str, ctx: &Ctx<'s, F>) -> bool
 where
     F: for<'a> FnMut(&'a str, Hints) -> Result<Cow<'a, str>, Error>,
 {
-    comment
-        .raw
-        .trim_start()
+    raw.trim_start()
         .strip_prefix(&ctx.options.ignore_comment_directive)
         .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_whitespace()) || rest.is_empty())
 }
@@ -2472,6 +2564,7 @@ where
                 (Vec::with_capacity(children.len() * 2), true),
                 |(mut docs, is_prev_text_like), (i, child)| {
                     let is_current_text_like = is_text_like(child, ctx.language);
+                    let prev_node = i.checked_sub(1).and_then(|j| children.get(j));
                     if should_ignore_node(child, i, children, ctx) {
                         let raw = child.raw.trim_end_matches([' ', '\t']);
                         let last_line_break_removed = raw.strip_suffix(['\n', '\r']);
@@ -2491,13 +2584,23 @@ where
                                 let is_last = i + 1 == children.len();
                                 if is_all_ascii_whitespace(text_node.raw) {
                                     if !is_first && !is_last {
-                                        if text_node.line_breaks > 1 {
-                                            docs.push(Doc::empty_line());
+                                        if let Some(gap) =
+                                            blade::php_close_gap(prev_node, text_node.raw)
+                                        {
+                                            docs.push(gap);
+                                        } else {
+                                            if text_node.line_breaks > 1 {
+                                                docs.push(Doc::empty_line());
+                                            }
+                                            docs.push(Doc::hard_line());
                                         }
-                                        docs.push(Doc::hard_line());
                                     }
                                 } else {
-                                    if let Some(hard_line) = maybe_hard_line {
+                                    if let Some(gap) =
+                                        blade::php_close_gap(prev_node, text_node.raw)
+                                    {
+                                        docs.push(gap);
+                                    } else if let Some(hard_line) = maybe_hard_line {
                                         docs.push(hard_line);
                                     } else if let Some(doc) =
                                         should_add_whitespace_before_text_node(text_node, is_first)
@@ -2541,6 +2644,12 @@ fn is_text_like(node: &Node, language: Language) -> bool {
         | NodeKind::AstroExpr(..)
         | NodeKind::JinjaInterpolation(..)
         | NodeKind::VentoInterpolation(..) => true,
+        NodeKind::BladeBlock(block) => blade::is_inline_block(block),
+        NodeKind::BladeComment(..)
+        | NodeKind::BladeDirective(..)
+        | NodeKind::BladeEcho(..)
+        | NodeKind::BladePhp(..)
+        | NodeKind::BladeVerbatim(..) => true,
         _ => false,
     }
 }
@@ -2560,6 +2669,7 @@ where
             .fold(
                 (Vec::with_capacity(children.len() * 2), true),
                 |(mut docs, is_prev_text_like), (i, child)| {
+                    let prev_node = i.checked_sub(1).and_then(|j| children.get(j));
                     if should_ignore_node(child, i, children, ctx) {
                         let raw = child.raw.trim_end_matches([' ', '\t']);
                         let last_line_break_removed = raw.strip_suffix(['\n', '\r']);
@@ -2571,6 +2681,10 @@ where
                         let is_first = i == 0;
                         let is_last = i + 1 == children.len();
                         if !is_first && !is_last && is_all_ascii_whitespace(text_node.raw) {
+                            if let Some(gap) = blade::php_close_gap(prev_node, text_node.raw) {
+                                docs.push(gap);
+                                return (docs, true);
+                            }
                             match text_node.line_breaks {
                                 0 => {
                                     if !is_prev_text_like
@@ -2592,7 +2706,11 @@ where
                             return (docs, true);
                         }
 
-                        if let Some(doc) =
+                        let gap = blade::php_close_gap(prev_node, text_node.raw)
+                            .filter(|_| !(is_last && is_all_ascii_whitespace(text_node.raw)));
+                        if let Some(gap) = gap {
+                            docs.push(gap);
+                        } else if let Some(doc) =
                             should_add_whitespace_before_text_node(text_node, is_first)
                         {
                             docs.push(doc);
@@ -2755,7 +2873,10 @@ where
                 },
             ))
             .nest(ctx.indent_width)
-            .append(format_ws_sensitive_trailing_ws(children)),
+            .append(
+                blade::php_close_trailing_gap(children)
+                    .unwrap_or_else(|| format_ws_sensitive_trailing_ws(children)),
+            ),
     }
 }
 

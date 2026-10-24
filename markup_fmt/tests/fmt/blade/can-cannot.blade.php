@@ -1,0 +1,21 @@
+@can('update', $post)
+<a href="{{ route('posts.edit', $post) }}">Edit</a>
+@elsecan('create', App\Models\Post::class)
+<a href="{{ route('posts.create') }}">New post</a>
+@else
+<span>Read only</span>
+@endcan
+
+@cannot('delete', $post)
+<p>You cannot delete this</p>
+@elsecannot('archive', $post)
+<p>Cannot archive</p>
+@endcannot
+
+@canany(['update', 'view', 'delete'], $post)
+<p>Some access</p>
+@elsecanany(['create', 'import'], App\Models\Post::class)
+<p>Can create or import</p>
+@else
+<p>No access</p>
+@endcanany

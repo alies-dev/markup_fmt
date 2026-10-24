@@ -1,0 +1,16 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<x-card>
+  <x-slot:title class="font-bold">
+    Title
+  </x-slot>
+  <x-slot name="footer">Footer</x-slot>
+  <x-slot :name="$slotName">Dynamic</x-slot>
+  <x-slot:header>Header</x-slot:header>
+  Body
+</x-card>
+<x:card>
+  <x:slot:title>X colon</x:slot:title>
+  <x:slot name="b">B</x:slot>
+</x:card>

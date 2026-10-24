@@ -1,0 +1,9 @@
+<div id="app">
+@verbatim
+    <div class="container">
+        Hello, {{ name }}.   @if (x) @click
+    </div>
+@endverbatim
+</div>
+<p>@verbatim {{ raw }} @endverbatim</p>
+<span>@verbatim <i> @endverbatim</span>

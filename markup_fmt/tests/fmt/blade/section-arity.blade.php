@@ -1,0 +1,15 @@
+@section('title', 'Home')
+@section('meta', $meta)
+@section('lang',   "en" )
+@section('capture', null)
+<p>captured block</p>
+@endsection
+@section('capture2', NULL)
+<p>captured block, uppercase NULL</p>
+@endsection
+@section('plain')
+<p>one argument is a block</p>
+@endsection
+@section('with-parent')
+@parent
+@endsection

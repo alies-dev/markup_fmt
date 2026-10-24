@@ -1,0 +1,25 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<ul class="users">
+  @forelse ($users as $user)
+    <li>{{ $user->name }}</li>
+  @empty
+    <li>No users</li>
+  @endforelse
+</ul>
+@forelse($posts as $post)
+  <article>
+    @empty($post->title)
+      <h2>Untitled</h2>
+    @endempty
+    <p>{{ $post->excerpt }}</p>
+  </article>
+@empty
+  <p>Nothing here</p>
+@endforelse
+@forelse ($a as $k => $v)
+  {{ $k }}: {{ $v }}
+@empty
+  -
+@endforelse

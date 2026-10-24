@@ -1,0 +1,5 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<p>@PHP $x = 1; @ENDPHP</p>
+<p>{{ $x }}</p>

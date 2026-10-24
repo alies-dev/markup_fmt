@@ -149,7 +149,7 @@
       "default": null
     },
     "component.selfClosing": {
-      "description": "Control whether Vue/Svelte/Astro/Angular component should be self-closed or not if it doesn't have children.",
+      "description": "Control whether Vue/Svelte/Astro/Angular/Blade component should be self-closed or not if it doesn't have children.",
       "type": ["boolean", "null"],
       "default": null
     },
@@ -370,6 +370,110 @@
       "description": "Control whether the next Angular control flow code should be on the same line with previous `}` or not.",
       "type": "boolean",
       "default": true
+    },
+    "blade.customDirectives": {
+      "description": "Names of directives registered with `Blade::directive()`, without the leading `@`. Names are case-sensitive. Unknown `@name` is treated as plain text.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]+(::[A-Za-z0-9_]+)?$"
+      },
+      "default": []
+    },
+    "blade.customIfDirectives": {
+      "description": "Names of conditionals registered with `Blade::if()`, without the leading `@`. Each name `n` provides `@n`, `@elsen`, `@unlessn` and `@endn`.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]+(::[A-Za-z0-9_]+)?$"
+      },
+      "default": []
+    },
+    "blade.customBlockDirectives": {
+      "description": "Explicit metadata for custom block directives: opener name, branch names, closer names, and whether the body is raw (kept verbatim). A block is never inferred from the existence of `@endname`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Name of the opening directive, without the leading `@`.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+(::[A-Za-z0-9_]+)?$"
+          },
+          "branches": {
+            "description": "Names of directives that continue the block, such as `else`.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]+(::[A-Za-z0-9_]+)?$"
+            },
+            "default": []
+          },
+          "closers": {
+            "description": "Names of directives that close the block.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]+(::[A-Za-z0-9_]+)?$"
+            },
+            "minItems": 1
+          },
+          "raw": {
+            "description": "Whether the body is raw text (for example JavaScript) that must be kept byte-for-byte.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": ["name", "closers"],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "blade.directiveSpace": {
+      "description": "Control the space between a directive name and its opening parenthesis in Blade files.",
+      "type": "string",
+      "oneOf": [
+        {
+          "const": "preserve",
+          "description": "Keep the source spelling: `@if(` stays `@if(` and `@if (` stays `@if (`."
+        },
+        {
+          "const": "normalize",
+          "description": "Built-in control-flow directives get exactly one space before `(`; other built-in directives get none. Custom directives and `@class`/`@style` in component tags are never changed."
+        }
+      ],
+      "default": "preserve"
+    },
+    "blade.presets": {
+      "description": "Directive sets of common packages to recognize in Blade files.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "oneOf": [
+          {
+            "const": "livewire",
+            "description": "Livewire 3: `@livewire`, `@livewireStyles`, `@livewireScripts`, `@livewireScriptConfig`, `@entangle`, `@this`, `@persist`, `@teleport`, `@assets` and `@script` (raw body)."
+          },
+          {
+            "const": "volt",
+            "description": "Livewire Volt: `@volt … @endvolt`."
+          },
+          {
+            "const": "inertia",
+            "description": "Inertia: `@inertia` and `@inertiaHead`."
+          },
+          {
+            "const": "ziggy",
+            "description": "Ziggy: `@routes`."
+          },
+          {
+            "const": "filament",
+            "description": "Filament: `@filamentStyles` and `@filamentScripts`."
+          }
+        ]
+      },
+      "uniqueItems": true,
+      "default": []
     },
     "scriptFormatter": {
       "description": "Tell markup_fmt what script formatter you are using.",

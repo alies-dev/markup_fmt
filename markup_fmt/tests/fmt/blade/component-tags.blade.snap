@@ -1,0 +1,16 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<x-alert type="error" :message="$message" class="mt-4" />
+<x-forms.user-card :user="$user">Hello</x-forms.user-card>
+<x-pkg::alert>Body</x-pkg::alert>
+<x:alert type="info">x</x:alert>
+<x-dynamic-component :component="$componentName" class="mt-4" />
+<x-UserCard :user="$user"></x-UserCard>
+<x-layouts.app title="Dashboard">
+  <x-inputs.button
+    wire:click="save"
+    @click="open = false"
+    x-on:keydown.enter.prevent="go"
+  >Save</x-inputs.button>
+</x-layouts.app>

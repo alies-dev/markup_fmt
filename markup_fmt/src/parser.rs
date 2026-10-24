@@ -9,10 +9,14 @@
 
 use crate::{
     ast::*,
+    blade::BladeRegistry,
+    config::LanguageOptions,
     error::{SyntaxError, SyntaxErrorKind},
     helpers,
 };
 use std::{iter::Peekable, str::CharIndices};
+
+mod blade;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Supported languages.
@@ -26,20 +30,40 @@ pub enum Language {
     Vento,
     Mustache,
     Xml,
+    Blade,
 }
 
 pub struct Parser<'s> {
     source: &'s str,
     language: Language,
     chars: Peekable<CharIndices<'s>>,
+    /// Present only for [`Language::Blade`].
+    blade: Option<BladeRegistry>,
+    /// Source ranges the Blade compiler extracts before anything else, sorted by start.
+    blade_spans: Vec<blade::RawSpan>,
+    /// Blade only: elements whose end tag is still to come, as `(tag name, start, blade depth)`.
+    blade_open_elements: Vec<(&'s str, usize, usize)>,
+    /// Blade only: number of Blade blocks enclosing the current position.
+    blade_depth: usize,
+    /// Blade only: memo that keeps closer and bracket searches from rescanning the source.
+    blade_scan: blade::ScanCache,
 }
 
 impl<'s> Parser<'s> {
-    pub fn new(source: &'s str, language: Language) -> Self {
+    pub fn new(source: &'s str, language: Language, options: &LanguageOptions) -> Self {
         Self {
             source,
             language,
             chars: source.char_indices().peekable(),
+            blade: (language == Language::Blade).then(|| BladeRegistry::new(options)),
+            blade_open_elements: vec![],
+            blade_depth: 0,
+            blade_scan: Default::default(),
+            blade_spans: if language == Language::Blade {
+                blade::find_raw_spans(source)
+            } else {
+                vec![]
+            },
         }
     }
 
@@ -675,6 +699,7 @@ impl<'s> Parser<'s> {
             Language::Html | Language::Angular | Language::Mustache | Language::Xml => {
                 self.parse_native_attr().map(Attribute::Native)
             }
+            Language::Blade => self.parse_blade_attr(),
             Language::Vue => self
                 .try_parse(Parser::parse_vue_directive)
                 .map(Attribute::VueDirective)
@@ -715,6 +740,9 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_attr_name(&mut self) -> PResult<&'s str> {
+        if self.language == Language::Blade {
+            return self.parse_blade_attr_name();
+        }
         if matches!(
             self.language,
             Language::Jinja | Language::Vento | Language::Mustache
@@ -779,6 +807,10 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_attr_value(&mut self) -> PResult<(&'s str, usize)> {
+        if self.language == Language::Blade {
+            return self.parse_blade_attr_value();
+        }
+
         let quote = self.chars.next_if(|(_, c)| *c == '"' || *c == '\'');
 
         if let Some((start, quote)) = quote {
@@ -976,6 +1008,7 @@ impl<'s> Parser<'s> {
                     match self.chars.peek() {
                         Some((_, '>')) => {
                             self.chars.next();
+                            self.blade_check_start_tag(element_start)?;
                             return Ok(Element {
                                 tag_name,
                                 attrs,
@@ -983,6 +1016,7 @@ impl<'s> Parser<'s> {
                                 children: vec![],
                                 self_closing: true,
                                 void_element,
+                                close_tag_name: None,
                             });
                         }
                         Some((_, '/' | '*')) if self.language == Language::Svelte => {
@@ -993,6 +1027,7 @@ impl<'s> Parser<'s> {
                 }
                 Some((_, '>')) => {
                     self.chars.next();
+                    self.blade_check_start_tag(element_start)?;
                     if void_element {
                         return Ok(Element {
                             tag_name,
@@ -1001,6 +1036,7 @@ impl<'s> Parser<'s> {
                             children: vec![],
                             self_closing: false,
                             void_element,
+                            close_tag_name: None,
                         });
                     }
                     break;
@@ -1037,12 +1073,22 @@ impl<'s> Parser<'s> {
             }
         }
 
+        if self.language == Language::Blade {
+            self.blade_open_elements
+                .push((tag_name, element_start, self.blade_depth));
+        }
+        let mut close_tag_name = None;
         loop {
             match self.chars.peek() {
                 Some((_, '<')) => {
                     if let Some((pos, _)) = self.try_consume_str("</") {
-                        let close_tag_name = self.parse_tag_name()?;
-                        if !close_tag_name.eq_ignore_ascii_case(tag_name) {
+                        let closer = self.parse_tag_name()?;
+                        let closes = if self.language == Language::Blade {
+                            blade::closes_tag(tag_name, closer)
+                        } else {
+                            closer.eq_ignore_ascii_case(tag_name)
+                        };
+                        if !closes {
                             let (line, column) =
                                 helpers::pos_to_line_col(self.source, element_start);
                             return Err(self.emit_error_with_pos(
@@ -1054,8 +1100,16 @@ impl<'s> Parser<'s> {
                                 pos,
                             ));
                         }
+                        if self.language == Language::Blade
+                            && !closer.eq_ignore_ascii_case(tag_name)
+                        {
+                            close_tag_name = Some(closer);
+                        }
                         self.eat_ws();
                         if self.chars.next_if(|(_, c)| *c == '>').is_some() {
+                            if self.language == Language::Blade {
+                                self.blade_open_elements.pop();
+                            }
                             break;
                         }
                         let (line, column) = helpers::pos_to_line_col(self.source, element_start);
@@ -1099,6 +1153,7 @@ impl<'s> Parser<'s> {
             children,
             self_closing: false,
             void_element,
+            close_tag_name,
         })
     }
 
@@ -1532,6 +1587,12 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_node_kind(&mut self) -> PResult<NodeKind<'s>> {
+        if self.language == Language::Blade
+            && let Some(result) = self.parse_blade_node_kind()
+        {
+            return result;
+        }
+
         match self.chars.peek() {
             Some((_, '<')) => match self.second() {
                 Some(c)
@@ -1548,6 +1609,7 @@ impl<'s> Parser<'s> {
                             | Language::Vento
                             | Language::Mustache
                             | Language::Xml
+                            | Language::Blade
                     ) {
                         self.try_parse(Parser::parse_comment)
                             .map(NodeKind::Comment)
@@ -1567,7 +1629,9 @@ impl<'s> Parser<'s> {
             },
             Some((_, '{')) => match self.second() {
                 Some('{') => match self.language {
-                    Language::Html | Language::Xml => self.parse_text_node().map(NodeKind::Text),
+                    Language::Html | Language::Xml | Language::Blade => {
+                        self.parse_text_node().map(NodeKind::Text)
+                    }
                     Language::Vue | Language::Jinja => {
                         self.parse_mustache_interpolation().map(|(expr, start)| {
                             match self.language {
@@ -1723,6 +1787,10 @@ impl<'s> Parser<'s> {
                     break;
                 }
             }
+        }
+
+        if self.language == Language::Blade {
+            self.blade_check_raw_text(start, end)?;
         }
 
         Ok(TextNode {
@@ -2307,6 +2375,9 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_tag_name(&mut self) -> PResult<&'s str> {
+        if self.language == Language::Blade {
+            return self.parse_blade_tag_name();
+        }
         let (start, mut end) = match self.chars.peek() {
             Some((i, c)) if is_html_tag_name_char(*c) => {
                 let c = *c;
@@ -2314,7 +2385,7 @@ impl<'s> Parser<'s> {
                 self.chars.next();
                 (start, start + c.len_utf8())
             }
-            Some((i, '{')) if matches!(self.language, Language::Jinja) => (*i, *i + 1),
+            Some((i, '{')) if self.language == Language::Jinja => (*i, *i + 1),
             Some((_, '>')) if matches!(self.language, Language::Astro) => {
                 // Astro allows fragment
                 return Ok("");
@@ -2326,7 +2397,7 @@ impl<'s> Parser<'s> {
             if is_html_tag_name_char(*c) {
                 end = *i + c.len_utf8();
                 self.chars.next();
-            } else if *c == '{' && matches!(self.language, Language::Jinja) {
+            } else if *c == '{' && self.language == Language::Jinja {
                 if self.second() == Some('{') {
                     self.parse_mustache_interpolation()?;
                     end = self.peek_pos();
@@ -2342,6 +2413,10 @@ impl<'s> Parser<'s> {
     }
 
     fn parse_text_node(&mut self) -> PResult<TextNode<'s>> {
+        if self.language == Language::Blade {
+            return self.parse_blade_text_node();
+        }
+
         let Some((start, first_char)) = self.chars.next() else {
             return Err(self.emit_error(SyntaxErrorKind::ExpectTextNode));
         };
@@ -2351,7 +2426,7 @@ impl<'s> Parser<'s> {
         loop {
             match self.chars.peek() {
                 Some((i, '{')) => match self.language {
-                    Language::Html | Language::Xml => {
+                    Language::Html | Language::Xml | Language::Blade => {
                         self.chars.next();
                     }
                     Language::Vue | Language::Vento | Language::Mustache => {
@@ -2699,7 +2774,7 @@ fn is_html_tag_name_char(c: char) -> bool {
 fn is_special_tag_name_char(c: char, language: Language) -> bool {
     match language {
         Language::Astro => c == '>',
-        Language::Jinja => c == '{',
+        Language::Jinja | Language::Blade => c == '{',
         _ => false,
     }
 }

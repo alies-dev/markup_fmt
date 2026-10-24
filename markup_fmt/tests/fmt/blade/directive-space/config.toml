@@ -1,0 +1,5 @@
+[preserve]
+"blade.directiveSpace" = "preserve"
+
+[normalize]
+"blade.directiveSpace" = "normalize"

@@ -1,6 +1,6 @@
 use dprint_core::{
     configuration::{
-        ConfigKeyMap, ConfigurationDiagnostic, GlobalConfiguration, NewLineKind,
+        ConfigKeyMap, ConfigKeyValue, ConfigurationDiagnostic, GlobalConfiguration, NewLineKind,
         get_nullable_value, get_unknown_property_diagnostics, get_value,
     },
     plugins::{FileMatchingInfo, PluginResolveConfigurationResult},
@@ -379,6 +379,38 @@ pub(crate) fn resolve_config(
                 "astroAttrShorthand",
                 &mut diagnostics,
             ),
+            blade_custom_directives: get_directive_names(
+                &mut config,
+                "blade.customDirectives",
+                &mut diagnostics,
+            ),
+            blade_custom_if_directives: get_directive_names(
+                &mut config,
+                "blade.customIfDirectives",
+                &mut diagnostics,
+            ),
+            blade_custom_block_directives: get_custom_block_directives(
+                &mut config,
+                "blade.customBlockDirectives",
+                &mut diagnostics,
+            ),
+            blade_directive_space: match &*get_value(
+                &mut config,
+                "blade.directiveSpace",
+                "preserve".to_string(),
+                &mut diagnostics,
+            ) {
+                "preserve" => BladeDirectiveSpace::Preserve,
+                "normalize" => BladeDirectiveSpace::Normalize,
+                _ => {
+                    diagnostics.push(ConfigurationDiagnostic {
+                        property_name: "blade.directiveSpace".into(),
+                        message: "invalid value for config `blade.directiveSpace`".into(),
+                    });
+                    Default::default()
+                }
+            },
+            blade_presets: get_blade_presets(&mut config, "blade.presets", &mut diagnostics),
             script_formatter: get_nullable_value::<String>(
                 &mut config,
                 "scriptFormatter",
@@ -418,6 +450,9 @@ pub(crate) fn resolve_config(
         config: markup_fmt_config,
         diagnostics,
         file_matching: FileMatchingInfo {
+            // dprint resolves a file by its last extension only, so the compound
+            // `blade.php` never selects this plugin by itself: users must route
+            // Blade files here with dprint's `associations` option (see docs).
             file_extensions: [
                 "html",
                 "vue",
@@ -440,6 +475,7 @@ pub(crate) fn resolve_config(
                 "xslt",
                 "xsl",
                 "csproj",
+                "blade.php",
             ]
             .into_iter()
             .map(String::from)
@@ -447,4 +483,215 @@ pub(crate) fn resolve_config(
             file_names: vec![],
         },
     }
+}
+
+/// Directive names accepted by Laravel's `Blade::directive()`: `\w+` with an optional `::\w+`.
+fn is_valid_directive_name(name: &str) -> bool {
+    let is_word = |part: &str| {
+        !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    };
+    match name.split_once("::") {
+        Some((pkg, rest)) => is_word(pkg) && is_word(rest),
+        None => is_word(name),
+    }
+}
+
+/// Removes `key` from `config` and returns its array items.
+/// A missing or `null` value yields no items; any other non-array value is reported.
+fn take_array(
+    config: &mut ConfigKeyMap,
+    key: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Vec<ConfigKeyValue> {
+    match config.shift_remove(key) {
+        None | Some(ConfigKeyValue::Null) => Vec::new(),
+        Some(ConfigKeyValue::Array(values)) => values,
+        Some(_) => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: key.into(),
+                message: format!("expected an array for config `{key}`"),
+            });
+            Vec::new()
+        }
+    }
+}
+
+fn directive_name(
+    value: ConfigKeyValue,
+    property_name: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Option<String> {
+    match value {
+        ConfigKeyValue::String(name) if is_valid_directive_name(&name) => Some(name),
+        ConfigKeyValue::String(name) => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: property_name.into(),
+                message: format!(
+                    "invalid directive name `{name}`: use letters, digits and underscores only, without the leading `@`"
+                ),
+            });
+            None
+        }
+        _ => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: property_name.into(),
+                message: "directive name must be a string".into(),
+            });
+            None
+        }
+    }
+}
+
+fn get_directive_names(
+    config: &mut ConfigKeyMap,
+    key: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Vec<String> {
+    take_array(config, key, diagnostics)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, value)| directive_name(value, &format!("{key}[{index}]"), diagnostics))
+        .collect()
+}
+
+fn get_blade_presets(
+    config: &mut ConfigKeyMap,
+    key: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Vec<BladePreset> {
+    take_array(config, key, diagnostics)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            let preset = match value.as_string().map(String::as_str) {
+                Some("livewire") => Some(BladePreset::Livewire),
+                Some("volt") => Some(BladePreset::Volt),
+                Some("inertia") => Some(BladePreset::Inertia),
+                Some("ziggy") => Some(BladePreset::Ziggy),
+                Some("filament") => Some(BladePreset::Filament),
+                _ => None,
+            };
+            if preset.is_none() {
+                diagnostics.push(ConfigurationDiagnostic {
+                    property_name: format!("{key}[{index}]"),
+                    message: "invalid preset: expected one of \"livewire\", \"volt\", \"inertia\", \"ziggy\" or \"filament\"".into(),
+                });
+            }
+            preset
+        })
+        .collect()
+}
+
+fn get_custom_block_directives(
+    config: &mut ConfigKeyMap,
+    key: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Vec<BladeCustomBlockDirective> {
+    take_array(config, key, diagnostics)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            parse_custom_block_directive(value, &format!("{key}[{index}]"), diagnostics)
+        })
+        .collect()
+}
+
+fn parse_custom_block_directive(
+    value: ConfigKeyValue,
+    property_name: &str,
+    diagnostics: &mut Vec<ConfigurationDiagnostic>,
+) -> Option<BladeCustomBlockDirective> {
+    let Some(mut object) = value.into_object() else {
+        diagnostics.push(ConfigurationDiagnostic {
+            property_name: property_name.into(),
+            message: "expected an object with `name`, `closers` and optional `branches` and `raw`"
+                .into(),
+        });
+        return None;
+    };
+    let mut valid = true;
+
+    let name = match object.shift_remove("name") {
+        Some(value) => directive_name(value, &format!("{property_name}.name"), diagnostics),
+        None => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: format!("{property_name}.name"),
+                message: "missing required property `name`".into(),
+            });
+            None
+        }
+    };
+    valid &= name.is_some();
+
+    let mut name_list = |field: &str, required: bool| -> Vec<String> {
+        let property_name = format!("{property_name}.{field}");
+        match object.shift_remove(field) {
+            None | Some(ConfigKeyValue::Null) if !required => Vec::new(),
+            None | Some(ConfigKeyValue::Null) => {
+                diagnostics.push(ConfigurationDiagnostic {
+                    property_name,
+                    message: format!("missing required property `{field}`"),
+                });
+                valid = false;
+                Vec::new()
+            }
+            Some(ConfigKeyValue::Array(items)) => {
+                let total = items.len();
+                let names = items
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(i, item)| {
+                        directive_name(item, &format!("{property_name}[{i}]"), diagnostics)
+                    })
+                    .collect::<Vec<_>>();
+                if required && total == 0 {
+                    diagnostics.push(ConfigurationDiagnostic {
+                        property_name,
+                        message: format!("`{field}` must contain at least one directive name"),
+                    });
+                }
+                if names.len() != total || (required && total == 0) {
+                    valid = false;
+                }
+                names
+            }
+            Some(_) => {
+                diagnostics.push(ConfigurationDiagnostic {
+                    property_name,
+                    message: format!("expected an array of strings for `{field}`"),
+                });
+                valid = false;
+                Vec::new()
+            }
+        }
+    };
+    let branches = name_list("branches", false);
+    let closers = name_list("closers", true);
+
+    let raw = match object.shift_remove("raw") {
+        None | Some(ConfigKeyValue::Null) => false,
+        Some(ConfigKeyValue::Bool(raw)) => raw,
+        Some(_) => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: format!("{property_name}.raw"),
+                message: "expected a boolean for `raw`".into(),
+            });
+            valid = false;
+            false
+        }
+    };
+
+    for unknown in object.into_keys() {
+        diagnostics.push(ConfigurationDiagnostic {
+            property_name: format!("{property_name}.{unknown}"),
+            message: "unknown property: expected `name`, `branches`, `closers` or `raw`".into(),
+        });
+    }
+
+    valid.then(|| BladeCustomBlockDirective {
+        name: name.expect("`name` presence is tracked by `valid`"),
+        branches,
+        closers,
+        raw,
+    })
 }

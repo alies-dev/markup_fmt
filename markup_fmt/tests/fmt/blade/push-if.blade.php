@@ -1,0 +1,11 @@
+@pushIf($shouldPush, 'scripts')
+<script src="/a.js"></script>
+@elsePushIf($other, 'scripts')
+<script src="/b.js"></script>
+@elsePush('scripts')
+<script src="/c.js"></script>
+@endPushIf
+
+@pushIf(config('app.debug'), 'styles')
+<link rel="stylesheet" href="/debug.css">
+@endPushIf

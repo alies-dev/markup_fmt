@@ -1,0 +1,21 @@
+---
+source: markup_fmt/tests/fmt.rs
+---
+<div>
+  @switch ($status)
+    {{-- the gap before the first case is PHP source --}}
+  @case('draft')
+    <span class="badge">Draft</span>
+    @break
+  @case('published')
+    <span class="badge badge-green">Published</span>
+    @break
+  @default
+    <span class="badge">Unknown</span>
+  @endswitch
+</div>
+@switch($n)
+@case(1)
+  one
+  @break
+@endswitch

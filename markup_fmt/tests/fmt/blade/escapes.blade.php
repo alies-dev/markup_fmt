@@ -1,0 +1,8 @@
+<p>@@if ($x) not a directive @@endif</p>
+<p>@{{ $notEchoed }}</p>
+<p>@{!! $raw !!}</p>
+<p>@{{{ $triple }}}</p>
+<div x-data="{ open: false }">@{{ item.name }} @@click</div>
+@{{ $a }} {{   $b }}
+<p>@@csrf</p>
+<p>@{{ $a }} @{{ $b }}</p>

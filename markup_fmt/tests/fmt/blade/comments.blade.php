@@ -1,0 +1,10 @@
+{{-- A simple comment --}}
+<div>
+{{-- multi
+    line comment
+    with {{ $x }} inside --}}
+<p>text</p>{{-- trailing --}}
+</div>
+{{--no spaces--}}
+<!-- html comment with {{ $secret }} and @csrf -->
+<p>{{-- inside text --}} after</p>

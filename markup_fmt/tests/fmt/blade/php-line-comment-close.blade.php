@@ -1,0 +1,8 @@
+<?php
+// see ?>
+<p>this is html now</p>
+<?php # also closes ?>
+<p>again html</p>
+<?php /* ?> still php */ echo 1; ?>
+<?php $s = "?>"; $t = '?>'; ?>
+<p>end</p>

@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 mod ast;
+mod blade;
 pub mod config;
 mod ctx;
 mod error;
@@ -56,23 +57,20 @@ pub fn format_text<F>(
 where
     F: for<'a> FnMut(&'a str, Hints) -> Result<Cow<'a, str>, Error>,
 {
-    let mut parser = Parser::new(code, language);
+    let mut parser = Parser::new(code, language, &options.language);
     let ast = parser.parse_root().map_err(FormatError::Syntax)?;
 
     if ast.children.first().is_some_and(|child| {
-        if let ast::Node {
-            kind: ast::NodeKind::Comment(ast::Comment { raw, .. }),
-            ..
-        } = child
-        {
-            raw.trim_start()
-                .strip_prefix(&options.language.ignore_file_comment_directive)
-                .is_some_and(|rest| {
-                    rest.starts_with(|c: char| c.is_ascii_whitespace()) || rest.is_empty()
-                })
-        } else {
-            false
-        }
+        let raw = match &child.kind {
+            ast::NodeKind::Comment(ast::Comment { raw, .. })
+            | ast::NodeKind::BladeComment(ast::BladeComment { raw }) => raw,
+            _ => return false,
+        };
+        raw.trim_start()
+            .strip_prefix(&options.language.ignore_file_comment_directive)
+            .is_some_and(|rest| {
+                rest.starts_with(|c: char| c.is_ascii_whitespace()) || rest.is_empty()
+            })
     }) {
         return Ok(code.into());
     }
@@ -82,7 +80,9 @@ where
         language,
         indent_width: options.layout.indent_width,
         print_width: options.layout.print_width,
+        line_break: options.layout.line_break,
         options: &options.language,
+        blade: (language == Language::Blade).then(|| blade::BladeRegistry::new(&options.language)),
         external_formatter,
         external_formatter_errors: Default::default(),
     };
@@ -118,6 +118,19 @@ where
 /// Detect language from file extension.
 pub fn detect_language(path: impl AsRef<Path>) -> Option<Language> {
     let path = path.as_ref();
+    if path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|file_name| {
+            file_name
+                .len()
+                .checked_sub(".blade.php".len())
+                .and_then(|start| file_name.get(start..))
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".blade.php"))
+        })
+    {
+        return Some(Language::Blade);
+    }
     match path.extension().and_then(std::ffi::OsStr::to_str) {
         Some("html") => {
             if path

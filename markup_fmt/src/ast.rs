@@ -107,6 +107,10 @@ pub enum AstroExprChild<'s> {
 #[derive(Debug)]
 pub enum Attribute<'s> {
     Astro(AstroAttribute<'s>),
+    BladeBlock(BladeBlock<'s, Attribute<'s>>),
+    BladeComment(BladeComment<'s>),
+    BladeDirective(BladeDirective<'s>),
+    BladeEcho(BladeEcho<'s>),
     JinjaBlock(JinjaBlock<'s, Attribute<'s>>),
     JinjaComment(JinjaComment<'s>),
     JinjaTag(JinjaTag<'s>),
@@ -116,6 +120,92 @@ pub enum Attribute<'s> {
     SvelteAttachment(SvelteAttachment<'s>),
     VentoTagOrBlock(NodeKind<'s>),
     VueDirective(VueDirective<'s>),
+}
+
+#[derive(Debug)]
+/// Opener, branches and closer of a Blade block with children in between.
+///
+/// See https://laravel.com/docs/blade#blade-directives.
+pub struct BladeBlock<'s, T> {
+    pub body: Vec<BladeDirectiveOrChildren<'s, T>>,
+}
+
+#[derive(Debug)]
+/// Blade comment: `{{-- ... --}}`; `raw` is the text between `{{--` and `--}}`.
+///
+/// See https://laravel.com/docs/blade#blade-comments.
+pub struct BladeComment<'s> {
+    pub raw: &'s str,
+}
+
+#[derive(Debug)]
+/// One Blade directive token: `@name`, `@name(args)` or `@name (args)`.
+///
+/// See https://laravel.com/docs/blade#blade-directives.
+pub struct BladeDirective<'s> {
+    /// Source spelling without `@` (may contain `::`).
+    pub name: &'s str,
+    /// Spaces or tabs between the name and `(`; empty when there is none or no args.
+    pub space: &'s str,
+    /// Text strictly inside the outer parens, with its byte offset.
+    pub args: Option<(&'s str, usize)>,
+}
+
+#[derive(Debug)]
+pub enum BladeDirectiveOrChildren<'s, T> {
+    Directive(BladeDirective<'s>),
+    Children(Vec<T>),
+}
+
+#[derive(Debug)]
+/// Blade echo: `{{ expr }}`, `{!! expr !!}` or `{{{ expr }}}`.
+///
+/// See https://laravel.com/docs/blade#displaying-data.
+pub struct BladeEcho<'s> {
+    pub kind: BladeEchoKind,
+    /// Text between the delimiters, untrimmed.
+    pub expr: &'s str,
+    /// Byte offset of `expr`.
+    pub start: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BladeEchoKind {
+    /// `{{ }}`
+    Escaped,
+    /// `{!! !!}`
+    Raw,
+    /// `{{{ }}}`
+    Triple,
+}
+
+#[derive(Debug)]
+/// Opaque PHP: `<?php ... ?>`, `<?= ... ?>` or `@php ... @endphp`.
+pub struct BladePhp<'s> {
+    pub kind: BladePhpKind,
+    /// Body between the delimiters.
+    pub code: &'s str,
+    pub start: usize,
+    /// `false` when `<?php` ran to the end of the source.
+    pub closed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BladePhpKind {
+    /// `<?php ... ?>`
+    Tag,
+    /// `<?= ... ?>`
+    EchoTag,
+    /// `@php ... @endphp`
+    Directive,
+}
+
+#[derive(Debug)]
+/// `@verbatim ... @endverbatim`, or the body of a raw custom block such as `@script ... @endscript`.
+///
+/// `raw` is the whole source span including the markers; it is printed byte-for-byte.
+pub struct BladeVerbatim<'s> {
+    pub raw: &'s str,
 }
 
 #[derive(Debug)]
@@ -154,6 +244,9 @@ pub struct Element<'s> {
     pub children: Vec<Node<'s>>,
     pub self_closing: bool,
     pub void_element: bool,
+    /// Blade only: the closing tag's spelling when it differs from `tag_name`
+    /// (`<x-slot:title>…</x-slot>`, `<x-a>…</x-b>`).
+    pub close_tag_name: Option<&'s str>,
 }
 
 #[derive(Debug)]
@@ -264,6 +357,12 @@ pub enum NodeKind<'s> {
     AngularLet(AngularLet<'s>),
     AngularSwitch(AngularSwitch<'s>),
     AstroExpr(AstroExpr<'s>),
+    BladeBlock(BladeBlock<'s, Node<'s>>),
+    BladeComment(BladeComment<'s>),
+    BladeDirective(BladeDirective<'s>),
+    BladeEcho(BladeEcho<'s>),
+    BladePhp(BladePhp<'s>),
+    BladeVerbatim(BladeVerbatim<'s>),
     Cdata(Cdata<'s>),
     Comment(Comment<'s>),
     Doctype(Doctype<'s>),

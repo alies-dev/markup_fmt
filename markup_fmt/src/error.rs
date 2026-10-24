@@ -19,6 +19,12 @@ pub enum SyntaxErrorKind {
     ExpectAstroExpr,
     ExpectAttrName,
     ExpectAttrValue,
+    ExpectBladeBlockEnd {
+        name: String,
+        line: usize,
+        column: usize,
+    },
+    ExpectBladeCommentEnd,
     ExpectCdata,
     ExpectChar(char),
     ExpectCloseTag {
@@ -58,6 +64,16 @@ pub enum SyntaxErrorKind {
     ExpectVentoBlockEnd,
     ExpectVueDirective,
     ExpectXmlDecl,
+    BladeUnexpectedDirective {
+        name: String,
+        line: usize,
+        column: usize,
+    },
+    BladeUnsupported {
+        reason: String,
+        line: usize,
+        column: usize,
+    },
 }
 
 impl fmt::Display for SyntaxErrorKind {
@@ -72,6 +88,11 @@ impl fmt::Display for SyntaxErrorKind {
             SyntaxErrorKind::ExpectAstroExpr => "expected Astro expression".into(),
             SyntaxErrorKind::ExpectAttrName => "expected attribute name".into(),
             SyntaxErrorKind::ExpectAttrValue => "expected attribute value".into(),
+            SyntaxErrorKind::ExpectBladeBlockEnd { name, line, column } => format!(
+                "expected end directive for opening Blade directive @{name} from line {line}, column {column}"
+            )
+            .into(),
+            SyntaxErrorKind::ExpectBladeCommentEnd => "expected end of Blade comment `--}}`".into(),
             SyntaxErrorKind::ExpectCdata => "expected CDATA section".into(),
             SyntaxErrorKind::ExpectChar(c) => format!("expected char '{c}'").into(),
             SyntaxErrorKind::ExpectCloseTag {
@@ -121,6 +142,15 @@ impl fmt::Display for SyntaxErrorKind {
             SyntaxErrorKind::ExpectVentoBlockEnd => "expected Vento block end".into(),
             SyntaxErrorKind::ExpectVueDirective => "expected Vue directive".into(),
             SyntaxErrorKind::ExpectXmlDecl => "expected XML declaration".into(),
+            SyntaxErrorKind::BladeUnexpectedDirective { name, line, column } => format!(
+                "unexpected Blade directive @{name} without a matching opening directive (line {line}, column {column})"
+            )
+            .into(),
+            SyntaxErrorKind::BladeUnsupported {
+                reason,
+                line,
+                column,
+            } => format!("unsupported Blade syntax: {reason} (line {line}, column {column})").into(),
         };
 
         write!(f, "{reason}")

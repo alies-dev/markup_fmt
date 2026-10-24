@@ -1,0 +1,10 @@
+<select name="role">
+<option value="a" @if ($role == 'a') selected @endif>A</option>
+<option value="b" @if ($role == 'b') selected @else data-x="1" @endif>B</option>
+<option value="c" @selected($role == 'c')>C</option>
+</select>
+<img @class(['rounded', 'border' => $border]) src="/a.png"   loading="lazy" alt="">
+<input type="checkbox" @checked(old('x', $x)) @disabled($locked) @required(true)>
+<button @if ($a) disabled @endif @if ($b) class="x" @elseif ($c) class="y" @endif>Go</button>
+<div @style(['color: red' => $r])></div>
+<a href="#" @unless ($external) target="_self" @endunless>Link</a>

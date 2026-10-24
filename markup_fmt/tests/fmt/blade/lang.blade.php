@@ -1,0 +1,13 @@
+<h1>@lang('messages.welcome')</h1>
+
+@lang
+    Welcome to {{ $name }}
+@endlang
+
+@lang(['name' => 'Alies'])
+    Hello :name
+@endlang
+
+<p>@lang( ['k' => 'v'])</p>
+<p>@lang(array('k' => 'v'))</p>
+<p>@lang('messages.hello', ['name' => $name])</p>

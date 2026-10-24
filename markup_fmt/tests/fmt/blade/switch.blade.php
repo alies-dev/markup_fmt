@@ -1,0 +1,26 @@
+@switch($i)
+    @case(1)
+        First case...
+        @break
+
+    @case(2)
+        Second case...
+        @break
+
+    @default
+        Default case...
+@endswitch
+
+<div>
+@switch ($role)
+@case('admin')
+<span class="badge">Admin</span>
+@break
+@case('editor')
+@case('author')
+<span class="badge">Writer</span>
+@break
+@default
+<span class="badge">Guest</span>
+@endswitch
+</div>

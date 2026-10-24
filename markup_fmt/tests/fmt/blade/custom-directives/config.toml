@@ -1,0 +1,4 @@
+[configured]
+"blade.customDirectives" = ["datetime", "money"]
+"blade.customIfDirectives" = ["admin"]
+"blade.customBlockDirectives" = [{ name = "markdown", closers = ["endmarkdown"], raw = true }, { name = "repeat", branches = ["otherwise"], closers = ["endrepeat"] }]
