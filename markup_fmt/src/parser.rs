@@ -1566,6 +1566,7 @@ impl<'s> Parser<'s> {
 
     fn parse_native_attr(&mut self) -> PResult<NativeAttribute<'s>> {
         let name = self.parse_attr_name()?;
+        let name_end = self.peek_pos();
         self.eat_ws();
         let mut quote = None;
         let value = if self.chars.next_if(|(_, c)| *c == '=').is_some() {
@@ -1578,7 +1579,14 @@ impl<'s> Parser<'s> {
         } else {
             None
         };
-        Ok(NativeAttribute { name, value, quote })
+        let source: &'s str = self.source;
+        let assign = value.map_or("", |(_, start)| source.get(name_end..start).unwrap_or(""));
+        Ok(NativeAttribute {
+            name,
+            value,
+            quote,
+            assign,
+        })
     }
 
     fn parse_node(&mut self) -> PResult<Node<'s>> {

@@ -10,7 +10,7 @@ use crate::{
     ast::*,
     blade::{
         BladeRegistry, DirectiveRole, DirectiveToken, ParenIndex, php::skip_php_string,
-        scan_directive_indexed,
+        scan_directive,
     },
     error::{SyntaxError, SyntaxErrorKind},
     helpers,
@@ -573,9 +573,9 @@ impl<'s> Parser<'s> {
         Some((from, end, end + Closer::Comment.text().len()))
     }
 
-    /// [`scan_directive_indexed`] on the source, sharing the parser's bracket memo.
+    /// [`scan_directive`] on the source, sharing the parser's bracket memo.
     fn scan_blade_directive(&self, at: usize) -> Option<DirectiveToken> {
-        scan_directive_indexed(self.source, at, &mut self.blade_scan.parens.borrow_mut())
+        scan_directive(self.source, at, &mut self.blade_scan.parens.borrow_mut())
     }
 
     /// End of the comment or echo starting at `at`, if there is one.
@@ -707,7 +707,7 @@ impl<'s> Parser<'s> {
         let mut parens = ParenIndex::default();
         for (rel, _) in self.source[pos..end].match_indices('@') {
             let at = pos + rel;
-            let Some(token) = scan_directive_indexed(visible, at, &mut parens) else {
+            let Some(token) = scan_directive(visible, at, &mut parens) else {
                 continue;
             };
             let (directive, _) = build_directive(visible, token);

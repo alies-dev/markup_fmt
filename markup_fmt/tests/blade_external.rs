@@ -634,3 +634,70 @@ fn lone_blade_attribute_is_formatted_once_when_its_layout_breaks() {
     assert!(output.contains("'id' => 'epsilon'"), "{output}");
     assert_eq!(merge_calls, 1, "{output}");
 }
+
+// ---------------------------------------------------------------------------
+// (h) Review fixes: textual directives, PHP tags in attributes, component `=` spelling, speed.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn multi_line_result_is_rejected_for_textually_read_directives() {
+    // `$expression[1] === '['` decides between `startTranslation` and `translator->get`.
+    assert_rejected(
+        "@lang(['name' => 'Ada'])<b>Hello :name</b>@endlang\n",
+        |code| code.replace('[', "[\n").replace(']', "\n]"),
+        &["@lang(\n"],
+    );
+    // `trim($segments[0], " '\"")` leaves a newline in the variable name.
+    assert_rejected(
+        "@inject('service', stdClass::class)\n",
+        |code| {
+            code.replace("inject(", "inject(\n")
+                .replace(", ", ",\n")
+                .replace(");", "\n);")
+        },
+        &["@inject(\n"],
+    );
+}
+
+#[test]
+fn php_tag_in_attribute_value_is_printed_verbatim() {
+    let src = "<div class=\"<?= strlen('a  b') ?>\"></div>\n";
+    similar_asserts::assert_eq!(src, format_identity(src));
+    let src = "<div class='<?php echo strlen(\"a  b\"); ?>'></div>\n";
+    similar_asserts::assert_eq!(src, format_identity(src));
+}
+
+#[test]
+fn component_attribute_keeps_spacing_around_equals() {
+    let src = "<x-alert :message = \"$message\" />\n";
+    similar_asserts::assert_eq!(src, format_identity(src));
+    let src = "<x-alert type =\"error\" :message= '$message' />\n";
+    similar_asserts::assert_eq!(src, format_identity(src));
+}
+
+#[test]
+fn script_with_many_unclosed_unknown_directives_is_linear() {
+    let src = format!("<script>// {}\n</script>\n", "@unknown(".repeat(30_000));
+    let started = std::time::Instant::now();
+    let output = format_identity(&src);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "took {:?}",
+        started.elapsed()
+    );
+    assert!(output.contains("@unknown("));
+}
+
+#[test]
+fn large_flat_argument_list_is_linear() {
+    let src = format!("@props([\n{}])\n", "'x',\n".repeat(30_000));
+    let started = std::time::Instant::now();
+    let output = format_identity(&src);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "took {:?}",
+        started.elapsed()
+    );
+    let squeeze = |text: &str| text.split_whitespace().collect::<String>();
+    assert_eq!(squeeze(&src), squeeze(&output));
+}

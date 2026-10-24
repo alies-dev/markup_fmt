@@ -159,7 +159,7 @@ static BUILTINS: &[Builtin] = &[
     if_block("auth", &["elseauth"], &["endauth"]),
     inline("aware"),
     inline("bool"),
-    inline("break"),
+    opaque("break"),
     if_block("can", &["elsecan"], &["endcan"]),
     if_block("canany", &["elsecanany"], &["endcanany"]),
     if_block("cannot", &["elsecannot"], &["endcannot"]),
@@ -170,7 +170,7 @@ static BUILTINS: &[Builtin] = &[
     block("component", &[], &["endcomponent"]),
     block("componentfirst", &[], &["endcomponentfirst"]),
     if_block("context", &[], &["endcontext"]),
-    inline("continue"),
+    opaque("continue"),
     inline("csrf"),
     inline("dd"),
     branch("default"),
@@ -611,15 +611,10 @@ pub(crate) struct DirectiveToken {
 ///
 /// Mirrors the compiler's `\B@(@?\w+(?:::\w+)?)([ \t]*)(\(...\))?` pattern: the previous char must
 /// not be a word char. The parentheses are balanced token-aware (PHP strings and comments are
-/// skipped); when they are not balanced the token is just `@name`.
-pub(crate) fn scan_directive(src: &str, at: usize) -> Option<DirectiveToken> {
-    scan_directive_indexed(src, at, &mut ParenIndex::default())
-}
-
-/// [`scan_directive`] that remembers failed parenthesis searches in `index`. The index belongs to
-/// one `src`: without it every `@name(` of a source with unbalanced parentheses rescans up to the
-/// end of the input.
-pub(crate) fn scan_directive_indexed(
+/// skipped); when they are not balanced the token is just `@name`. `index` remembers failed
+/// parenthesis searches and belongs to one `src`: without it every `@name(` of a source with
+/// unbalanced parentheses rescans up to the end of the input.
+pub(crate) fn scan_directive(
     src: &str,
     at: usize,
     index: &mut ParenIndex,
@@ -836,7 +831,7 @@ mod tests {
     }
 
     fn scan(src: &str, at: usize) -> Option<(&str, &str, Option<&str>, usize)> {
-        scan_directive(src, at).map(|token| {
+        scan_directive(src, at, &mut ParenIndex::default()).map(|token| {
             (
                 &src[token.name],
                 &src[token.space],
@@ -908,6 +903,16 @@ mod tests {
         assert!(!registry.formats_args("unknown"));
     }
 
+    /// Laravel classifies `@break(N)`/`@continue(N)` args by regex on the raw text (integer =
+    /// nesting level, else condition), so redundant-paren removal would change semantics.
+    #[test]
+    fn break_and_continue_args_are_not_formatted() {
+        let registry = registry();
+        assert!(!registry.formats_args("break"));
+        assert!(!registry.formats_args("Continue"));
+        assert!(registry.formats_args("dd"));
+    }
+
     #[test]
     fn arity_rules() {
         let registry = registry();
@@ -977,8 +982,8 @@ mod tests {
             let mut index = ParenIndex::default();
             for (at, _) in src.match_indices('@') {
                 assert_eq!(
-                    scan_directive_indexed(src, at, &mut index),
-                    scan_directive(src, at),
+                    scan_directive(src, at, &mut index),
+                    scan_directive(src, at, &mut ParenIndex::default()),
                     "{src:?} at {at}"
                 );
             }
@@ -991,7 +996,7 @@ mod tests {
         let mut index = ParenIndex::default();
         let started = std::time::Instant::now();
         for (at, _) in src.match_indices('@') {
-            let token = scan_directive_indexed(&src, at, &mut index).unwrap();
+            let token = scan_directive(&src, at, &mut index).unwrap();
             assert!(token.args.is_none());
         }
         assert!(started.elapsed() < std::time::Duration::from_secs(5));

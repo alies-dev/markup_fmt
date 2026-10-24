@@ -340,6 +340,9 @@ pub struct NativeAttribute<'s> {
     pub name: &'s str,
     pub value: Option<(&'s str, usize)>,
     pub quote: Option<char>,
+    /// Source between the name and the value (`=`, surrounding whitespace and the opening
+    /// quote); empty without a value.
+    pub assign: &'s str,
 }
 
 #[derive(Debug)]

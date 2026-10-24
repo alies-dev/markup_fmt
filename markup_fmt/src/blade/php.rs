@@ -113,8 +113,6 @@ const CALL_DIRECTIVES: &[&str] = &[
     "fonts",
     "dd",
     "dump",
-    "break",
-    "continue",
     "section",
     "push",
     "prepend",
@@ -235,8 +233,6 @@ const COMMA_SPLITTING: &[&str] = &[
     "push",
     "prepend",
     "slot",
-    "break",
-    "continue",
 ];
 
 /// Wraps `snippet` into PHP. `None` means the snippet is opaque or cannot be framed safely
@@ -1070,10 +1066,6 @@ mod tests {
             code_of(dir("include", "'x', ['a' => 1]")),
             "<?php blade_directive('x', ['a' => 1]);"
         );
-        assert_eq!(
-            code_of(dir("break", "$i > 3")),
-            "<?php blade_directive($i > 3);"
-        );
         assert_eq!(code_of(dir("yield", "'x'")), "<?php blade_directive('x');");
         assert_eq!(
             code_of(dir("class", "['a']")),
@@ -1470,8 +1462,6 @@ mod tests {
             "push",
             "prepend",
             "slot",
-            "break",
-            "continue",
         ] {
             let snippet = dir(name, "$a, $b");
             assert!(

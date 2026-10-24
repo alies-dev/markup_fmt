@@ -1,7 +1,7 @@
 use super::{DocGen, format_control_structure_block_children, is_all_ascii_whitespace, reflow_raw};
 use crate::{
     ast::*,
-    blade::{DirectiveRole, php::BladePhpSnippet, scan_directive},
+    blade::{DirectiveRole, ParenIndex, php::BladePhpSnippet, scan_directive},
     config::{BladeDirectiveSpace, LineBreak},
     ctx::{Ctx, Hints},
     helpers,
@@ -16,6 +16,36 @@ const CONTROL_FLOW: [&str; 11] = [
     "if", "elseif", "unless", "isset", "empty", "foreach", "forelse", "for", "while", "switch",
     "case",
 ];
+
+/// Built-in directives whose compiler splits or trims the raw argument text (`explode`,
+/// `preg_match`, `trim` with a character list, `$expression[1]`) instead of embedding it into
+/// PHP code, so their arguments must stay on one line.
+const TEXTUAL_ARGS: [&str; 18] = [
+    "lang",
+    "inject",
+    "json",
+    "js",
+    "pushIf",
+    "elsePushIf",
+    "elsePush",
+    "pushOnce",
+    "prependOnce",
+    "each",
+    "section",
+    "push",
+    "prepend",
+    "slot",
+    "foreach",
+    "forelse",
+    "component",
+    "fragment",
+];
+
+fn reads_args_textually(name: &str) -> bool {
+    TEXTUAL_ARGS
+        .iter()
+        .any(|textual| textual.eq_ignore_ascii_case(name))
+}
 
 pub(super) fn format_block_nodes<'s, F>(
     block: &BladeBlock<'s, Node<'s>>,
@@ -167,6 +197,14 @@ where
         )
     } else {
         Cow::Borrowed(args)
+    };
+    // The multi-line layout puts a newline right after `(` and before `)`, which these
+    // directives' compilers would read as part of the first/last argument.
+    let formatted = match formatted {
+        Cow::Owned(text) if text.contains('\n') && reads_args_textually(directive.name) => {
+            Cow::Borrowed(args)
+        }
+        formatted => formatted,
     };
     let multi_line = match formatted {
         Cow::Borrowed(args) => {
@@ -407,8 +445,26 @@ where
         .current_tag_name
         .is_some_and(helpers::is_blade_component);
     let has_echo = value.contains("{{") || value.contains("{!!");
-    if !is_component && !has_echo && !value.contains('@') {
+    // PHP tags are opaque: their strings must reach the output as written.
+    let has_php = value.contains("<?");
+    if !is_component && !has_echo && !has_php && !value.contains('@') {
         return None;
+    }
+
+    let tight_assign = match attr.quote {
+        Some(quote) => attr.assign.strip_suffix(quote) == Some("="),
+        None => attr.assign == "=",
+    };
+    if is_component && !tight_assign {
+        // Laravel's component attribute pattern needs `=` right after the name; without it
+        // the tag stays literal markup, so its source spelling must survive.
+        let mut docs = vec![Doc::text(attr.name)];
+        docs.extend(reflow_exact(attr.assign, ctx.line_break));
+        docs.extend(reflow_exact(value, ctx.line_break));
+        if let Some(quote) = attr.quote {
+            docs.push(Doc::char(quote));
+        }
+        return Some(Doc::list(docs));
     }
 
     // `:attr="expr"` binds a PHP expression; `::attr` is escaped and stays as written.
@@ -416,6 +472,7 @@ where
         && attr.name.starts_with(':')
         && !attr.name.starts_with("::")
         && !has_echo
+        && !has_php
         && !value.trim_ascii().is_empty();
     let formatted = if is_binding {
         ctx.format_blade_php(BladePhpSnippet::Attr(value), value, start, state)
@@ -478,8 +535,10 @@ where
     let Some(registry) = ctx.blade.as_ref() else {
         return false;
     };
+    // One index for the whole text: unbalanced `@name(` otherwise rescans the rest each time.
+    let mut index = ParenIndex::default();
     text.match_indices('@').any(|(at, _)| {
-        scan_directive(text, at).is_some_and(|token| {
+        scan_directive(text, at, &mut index).is_some_and(|token| {
             let args = token.args.map(|args| &text[args]);
             registry.role(&text[token.name], args) != DirectiveRole::Unknown
         })
@@ -734,12 +793,20 @@ fn literal_line_starts(text: &str) -> Option<Vec<bool>> {
         }
     }
     let mut starts = vec![false];
+    // Literals are sorted and disjoint, so one cursor serves every line start.
+    let mut cursor = 0;
     for (newline, _) in bytes.iter().enumerate().filter(|(_, byte)| **byte == b'\n') {
         let line_start = newline + 1;
+        while literals
+            .get(cursor)
+            .is_some_and(|&(_, end)| end < line_start)
+        {
+            cursor += 1;
+        }
         starts.push(
             literals
-                .iter()
-                .any(|&(start, end)| start < line_start && line_start <= end),
+                .get(cursor)
+                .is_some_and(|&(start, end)| start < line_start && line_start <= end),
         );
     }
     Some(starts)
