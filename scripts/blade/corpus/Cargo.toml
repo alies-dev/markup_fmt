@@ -1,0 +1,22 @@
+[package]
+name = "blade-corpus"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Runs markup_fmt's Blade formatter over a directory of *.blade.php files and reports failures, crashes and non-idempotent output."
+
+# Standalone crate: not a member of the repository workspace.
+[workspace]
+
+[features]
+default = ["mago"]
+# `--php-formatter mago`: format PHP snippets in-process with the mago formatter.
+# `mago-*` crates are versioned in lockstep; keep them on the same version (needs rustc >= 1.99).
+mago = ["dep:mago-formatter", "dep:mago-php-version", "dep:mago-allocator"]
+
+[dependencies]
+anyhow = "1.0"
+mago-allocator = { version = "=1.58.2", optional = true }
+mago-formatter = { version = "=1.58.2", optional = true }
+mago-php-version = { version = "=1.58.2", optional = true }
+markup_fmt = { path = "../../../markup_fmt" }

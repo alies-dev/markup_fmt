@@ -1,0 +1,15 @@
+{
+    "name": "markup-fmt/blade-tools",
+    "description": "Reference Laravel Blade compiler used by the markup_fmt Blade differential gate and drift check.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "illuminate/view": "13.38.0"
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable"
+}
