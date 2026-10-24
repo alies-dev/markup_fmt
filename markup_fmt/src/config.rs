@@ -223,6 +223,35 @@ pub struct LanguageOptions {
     )]
     pub angular_next_control_flow_same_line: bool,
 
+    #[cfg_attr(
+        feature = "config_serde",
+        serde(rename = "blade.custom_directives", alias = "blade.customDirectives")
+    )]
+    pub blade_custom_directives: Vec<String>,
+    #[cfg_attr(
+        feature = "config_serde",
+        serde(
+            rename = "blade.custom_if_directives",
+            alias = "blade.customIfDirectives"
+        )
+    )]
+    pub blade_custom_if_directives: Vec<String>,
+    #[cfg_attr(
+        feature = "config_serde",
+        serde(
+            rename = "blade.custom_block_directives",
+            alias = "blade.customBlockDirectives"
+        )
+    )]
+    pub blade_custom_block_directives: Vec<BladeCustomBlockDirective>,
+    #[cfg_attr(
+        feature = "config_serde",
+        serde(rename = "blade.directive_space", alias = "blade.directiveSpace")
+    )]
+    pub blade_directive_space: BladeDirectiveSpace,
+    #[cfg_attr(feature = "config_serde", serde(rename = "blade.presets"))]
+    pub blade_presets: Vec<BladePreset>,
+
     #[cfg_attr(feature = "config_serde", serde(alias = "scriptFormatter"))]
     pub script_formatter: Option<ScriptFormatter>,
 
@@ -275,6 +304,11 @@ impl Default for LanguageOptions {
             svelte_directive_shorthand: None,
             astro_attr_shorthand: None,
             angular_next_control_flow_same_line: true,
+            blade_custom_directives: Vec::new(),
+            blade_custom_if_directives: Vec::new(),
+            blade_custom_block_directives: Vec::new(),
+            blade_directive_space: BladeDirectiveSpace::default(),
+            blade_presets: Vec::new(),
             script_formatter: None,
             ignore_comment_directive: "markup-fmt-ignore".into(),
             ignore_file_comment_directive: "markup-fmt-ignore-file".into(),
@@ -372,6 +406,39 @@ pub enum VueComponentCase {
     PascalCase,
     #[cfg_attr(feature = "config_serde", serde(alias = "kebabCase"))]
     KebabCase,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "config_serde", derive(Serialize, Deserialize))]
+/// A project-specific block directive such as `@role ... @endrole`.
+pub struct BladeCustomBlockDirective {
+    pub name: String,
+    #[cfg_attr(feature = "config_serde", serde(default))]
+    pub branches: Vec<String>,
+    pub closers: Vec<String>,
+    /// Whether the body is kept verbatim (like `@script ... @endscript`).
+    #[cfg_attr(feature = "config_serde", serde(default))]
+    pub raw: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "config_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "config_serde", serde(rename_all = "kebab-case"))]
+pub enum BladeDirectiveSpace {
+    #[default]
+    Preserve,
+    Normalize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "config_serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "config_serde", serde(rename_all = "kebab-case"))]
+pub enum BladePreset {
+    Livewire,
+    Volt,
+    Inertia,
+    Ziggy,
+    Filament,
 }
 
 #[derive(Clone, Copy, Debug)]

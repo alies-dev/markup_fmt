@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 #[test]
 fn fmt_snapshot() {
-    let pattern = "fmt/**/*.{html,vue,svelte,astro,jinja,njk,vto,mustache,hbs,xml}";
+    let pattern = "fmt/**/*.{html,vue,svelte,astro,jinja,njk,vto,mustache,hbs,xml,blade.php}";
     glob!(pattern, |path| {
         let input = fs::read_to_string(path).unwrap();
         let language = detect_language(path).unwrap();

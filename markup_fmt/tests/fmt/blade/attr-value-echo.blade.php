@@ -1,0 +1,8 @@
+<a href="{{ route('home') }}" class="{{ $a > 1 ? 'x' : 'y' }}" title="{{ $a ? "x" : "y" }}">Home</a>
+<div x-data="{ open: @js($open) }" data-id='{{ $id }}'>
+<input value="{{ old('name', $user->name) }}" placeholder="{!! $ph !!}" data-raw="{{{ $x }}}">
+<p title="Hello {{-- c --}} there">x</p>
+<div class="a   {{ $b }}    c" id="{{$id}}">
+<input class={{ $cls }} value=x>
+</div>
+</div>

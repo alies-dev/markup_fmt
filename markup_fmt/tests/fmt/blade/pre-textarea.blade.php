@@ -1,0 +1,10 @@
+<pre>
+{{ $code }}
+@if ($x)
+indented   spacing
+@endif
+</pre>
+<textarea name="body">
+{{ old('body') }}
+</textarea>
+<pre>{{ $a }}   {{$b}}</pre>

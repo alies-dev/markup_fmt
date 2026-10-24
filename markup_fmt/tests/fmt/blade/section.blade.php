@@ -1,0 +1,28 @@
+@extends('layouts.app')
+
+@section('title', 'Home')
+
+@section('sidebar')
+    @parent
+    <p>This is appended to the master sidebar.</p>
+@endsection
+
+@section('content')
+<p>Hi</p>
+@stop
+
+@section('scripts')
+<script src="/a.js"></script>
+@show
+
+@section('footer')
+<small>footer</small>
+@append
+
+@section('head')
+<meta charset="utf-8">
+@overwrite
+
+@section ('spaced')
+<i>space before paren</i>
+@endsection

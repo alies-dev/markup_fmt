@@ -1,0 +1,1 @@
+Tags: @foreach ($tags as $tag){{ $tag }}@if (! $loop->last), @endif @endforeach.

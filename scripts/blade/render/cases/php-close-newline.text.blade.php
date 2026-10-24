@@ -1,0 +1,3 @@
+A<?php $n = 1; ?>
+B<?php echo $n; ?>
+C

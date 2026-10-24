@@ -1,0 +1,21 @@
+@hasSection('navigation')
+<nav>@yield('navigation')</nav>
+@else
+<nav>default</nav>
+@endif
+
+@sectionMissing('sidebar')
+<aside>Default sidebar</aside>
+@endif
+
+@hasstack('scripts')
+<div class="scripts">
+@stack('scripts')
+</div>
+@else
+<span>no scripts</span>
+@endif
+
+@hassection('footer')
+<footer>@yield('footer')</footer>
+@endif

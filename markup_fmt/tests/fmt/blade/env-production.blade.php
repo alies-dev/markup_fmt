@@ -1,0 +1,17 @@
+@env('local')
+<script src="/debug.js"></script>
+@elseif (app()->environment('staging'))
+<div class="banner">Staging</div>
+@else
+<!-- no debug here -->
+@endenv
+
+@env(['staging', 'production'])
+<meta name="robots" content="index">
+@endenv
+
+@production
+<script async src="https://analytics.example.com/a.js"></script>
+@else
+<div class="dev-toolbar">dev</div>
+@endproduction

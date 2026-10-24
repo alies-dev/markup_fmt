@@ -1,0 +1,8 @@
+<style>
+    .hero { background: url('{{ asset('img/hero.jpg') }}'); }
+    .a   {   color: {{ $color }}; }
+    @media (min-width: 640px) { .b { display: none; } }
+</style>
+<style>
+@media (min-width: 640px) { .a { color: red; } }
+</style>

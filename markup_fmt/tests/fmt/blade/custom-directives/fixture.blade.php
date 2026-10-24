@@ -1,0 +1,20 @@
+<p>@datetime($when) costs @money($price, 'EUR')</p>
+@admin
+<p>Admin only</p>
+@elseadmin
+<p>other admin</p>
+@else
+<p>Not admin</p>
+@endadmin
+@unlessadmin
+<p>Everyone else</p>
+@endadmin
+@markdown
+# Heading   kept   raw
+   * item {{ $x }}
+@endmarkdown
+@repeat(3)
+<p>x</p>
+@otherwise
+<p>none</p>
+@endrepeat

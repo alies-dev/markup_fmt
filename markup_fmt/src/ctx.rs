@@ -1,6 +1,10 @@
 use crate::{
     Language,
-    config::{LanguageOptions, Quotes, WhitespaceSensitivity},
+    blade::{
+        BladeRegistry,
+        php::{self, BladePhpSnippet},
+    },
+    config::{LanguageOptions, LineBreak, Quotes, WhitespaceSensitivity},
     helpers,
     state::State,
 };
@@ -23,7 +27,11 @@ where
     pub(crate) language: Language,
     pub(crate) indent_width: usize,
     pub(crate) print_width: usize,
+    /// The printer's line break; Blade raw spans need it to keep their own bytes.
+    pub(crate) line_break: LineBreak,
     pub(crate) options: &'b LanguageOptions,
+    /// Directive registry; `Some` only when formatting Blade.
+    pub(crate) blade: Option<BladeRegistry>,
     pub(crate) external_formatter: F,
     pub(crate) external_formatter_errors: Vec<Error>,
 }
@@ -38,7 +46,8 @@ where
             | Language::Jinja
             | Language::Vento
             | Language::Angular
-            | Language::Mustache => self
+            | Language::Mustache
+            | Language::Blade => self
                 .options
                 .html_script_indent
                 .unwrap_or(self.options.script_indent),
@@ -64,7 +73,8 @@ where
             | Language::Jinja
             | Language::Vento
             | Language::Angular
-            | Language::Mustache => self
+            | Language::Mustache
+            | Language::Blade => self
                 .options
                 .html_style_indent
                 .unwrap_or(self.options.style_indent),
@@ -85,17 +95,22 @@ where
     }
 
     pub(crate) fn is_whitespace_sensitive(&self, tag_name: &str) -> bool {
-        match self.language {
-            Language::Vue | Language::Svelte | Language::Astro | Language::Angular
-                if helpers::is_component(tag_name) =>
-            {
-                matches!(
-                    self.options
-                        .component_whitespace_sensitivity
-                        .unwrap_or(self.options.whitespace_sensitivity),
-                    WhitespaceSensitivity::Css | WhitespaceSensitivity::Strict
-                )
+        let is_component = match self.language {
+            Language::Vue | Language::Svelte | Language::Astro | Language::Angular => {
+                helpers::is_component(tag_name)
             }
+            Language::Blade => helpers::is_blade_component(tag_name),
+            _ => false,
+        };
+        if is_component {
+            return matches!(
+                self.options
+                    .component_whitespace_sensitivity
+                    .unwrap_or(self.options.whitespace_sensitivity),
+                WhitespaceSensitivity::Css | WhitespaceSensitivity::Strict
+            );
+        }
+        match self.language {
             Language::Xml => false,
             _ => match self.options.whitespace_sensitivity {
                 WhitespaceSensitivity::Css => {
@@ -393,6 +408,42 @@ where
         )
         .trim_ascii()
         .to_owned()
+    }
+
+    /// Formats the PHP of a Blade snippet through the external formatter (`ext: "php"`).
+    ///
+    /// Returns the formatted inner text without Blade delimiters. Anything that could change
+    /// how Laravel reads the template yields `source` (borrowed) instead: an opaque snippet,
+    /// a formatter error (not recorded, PHP formatting is best-effort), an unchanged result,
+    /// a result that can't be unframed, or one failing the postconditions.
+    pub(crate) fn format_blade_php<'a>(
+        &mut self,
+        snippet: BladePhpSnippet<'a>,
+        source: &'a str,
+        start: usize,
+        state: &State,
+    ) -> Cow<'a, str> {
+        let Some(framed) = php::frame(&snippet) else {
+            return Cow::Borrowed(source);
+        };
+        let hints = Hints {
+            print_width: self
+                .print_width
+                .saturating_sub((state.indent_level as usize) * self.indent_width)
+                .saturating_sub(php::print_width_overhead(&snippet)),
+            indent_level: state.indent_level,
+            attr: matches!(snippet, BladePhpSnippet::Attr(_)),
+            ext: "php",
+        };
+        // An owned copy of the input is as good as no result: keep the source layout.
+        let formatted = match self.try_format_with_external_formatter(&framed.code, hints, start) {
+            Ok(Cow::Owned(formatted)) if formatted != framed.code => formatted,
+            _ => return Cow::Borrowed(source),
+        };
+        match php::unframe(&framed, &formatted) {
+            Some(inner) if php::postconditions_hold(&snippet, source, &inner) => Cow::Owned(inner),
+            _ => Cow::Borrowed(source),
+        }
     }
 
     fn format_with_external_formatter<'a>(

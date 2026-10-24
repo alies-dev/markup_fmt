@@ -1,0 +1,1 @@
+Hello @if($vip) dear @endif {{ $name }},

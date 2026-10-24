@@ -1,0 +1,5 @@
+<p>Hello @if ($vip) dear @endif {{ $name }},</p>
+<p>Total: {{ $total }}@if ($tax) (incl. tax)@endif.</p>
+<p>Price: {{ $price }}€ <span>{{ $unit }}</span> @unless ($free) per month @endunless</p>
+<p>See @include('partials.link') for more, @lang('messages.bye').</p>
+Hello @if ($vip) dear @endif {{ $name }},

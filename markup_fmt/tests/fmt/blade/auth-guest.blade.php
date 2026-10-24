@@ -1,0 +1,21 @@
+@auth('web')
+<a href="/dashboard">Dashboard</a>
+@elseauth('admin')
+<a href="/admin">Admin</a>
+@else
+<a href="/home">Home</a>
+@endauth
+
+@guest
+<a href="{{ route('login') }}">Log in</a>
+@elseguest('admin')
+<a href="/admin/login">Admin login</a>
+@endguest
+
+@auth
+<nav>
+@guest('api')
+<span>api guest inside web auth</span>
+@endguest
+</nav>
+@endauth

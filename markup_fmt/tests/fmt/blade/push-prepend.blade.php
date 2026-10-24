@@ -1,0 +1,19 @@
+@push('scripts')
+<script src="/example.js"></script>
+@endpush
+
+@prepend('scripts')
+<script src="/first.js"></script>
+@endprepend
+
+@pushOnce('scripts')
+<script src="/once.js"></script>
+@endPushOnce
+
+@pushonce('scripts', 'my-id')
+<script src="/once-lower.js"></script>
+@endpushonce
+
+@prependOnce('styles')
+<link rel="stylesheet" href="/prepend.css">
+@endPrependOnce

@@ -1,0 +1,12 @@
+<x-modal>
+    <x-slot:footer class="mt-4">
+        <button>Close</button>
+    </x-slot:footer>
+    <x-slot:title>
+        Title
+    </x-slot>
+    <x:slot:sidebar>Side</x-slot:sidebar>
+    <x-slot:actions>
+        <x-button>Save</x-button>
+    </x-slot>
+</x-modal>
