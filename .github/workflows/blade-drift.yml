@@ -1,0 +1,40 @@
+name: blade-drift
+
+# Detects Laravel changes to the set of Blade directives (`compile*` methods of BladeCompiler) that
+# markup_fmt's directive table (markup_fmt/src/blade.rs) has not been reviewed against.
+# A failing run means: read the diff printed by scripts/blade/drift.php, update the table and
+# scripts/blade/known-compile-methods.txt.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/blade-drift.yml"
+      - "scripts/blade/**"
+      - "markup_fmt/src/blade.rs"
+      - "markup_fmt/src/blade/**"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  drift:
+    name: drift
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts/blade
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          tools: composer:v2
+      - name: Install pinned Laravel (illuminate/view, see composer.json)
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Drift against the pinned Laravel version
+        run: php drift.php
+      - name: Drift against the latest illuminate/view release
+        if: github.event_name != 'pull_request'
+        run: |
+          composer require "illuminate/view:*" --with-all-dependencies --no-interaction --no-progress
+          php drift.php
