@@ -7,7 +7,7 @@ There're several options:
 
 - `html.normal.selfClosing`: This option affects on HTML normal elements.
 - `html.void.selfClosing`: This option affects on HTML void elements.
-- `component.selfClosing`: This option affects on Vue, Svelte, Astro and Angular components.
+- `component.selfClosing`: This option affects on Vue, Svelte, Astro, Angular and Blade components.
 - `svg.selfClosing`: This option affects on SVG elements.
 - `mathml.selfClosing`: This option affects on MathML elements.
 

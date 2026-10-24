@@ -11,7 +11,7 @@ Possible options:
 
 Default option is `"css"`.
 
-This option can be overridden for Vue, Svelte, Astro and Angular components by the following option:
+This option can be overridden for Vue, Svelte, Astro, Angular and Blade components by the following option:
 
 - `component.whitespaceSensitivity`
 
